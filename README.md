@@ -6,27 +6,19 @@ ZeroTrace 可观测性平台的服务端，负责采集数据接收、处理和�
 
 ```
 ┌─────────────────┐     gRPC + TCP      ┌──────────────────────┐
-│  zerotrace-agent │ ──────────────────→ │    zt-server         │
-│  (每台宿主机)    │                     │  (控制器+写入+查询)  │
+│  zerotrace-agent │ ──────────────────→ │    zt-server        │
+│  (每台宿主机)    │                     │  (控制器+写入+查询)     │
 └─────────────────┘                     └──────┬───────────────┘
                                                │
                                      ┌─────────┴─────────┐
                                      │                   │
                               ┌──────┴──────┐    ┌───────┴──────┐
                               │    MySQL    │    │  ClickHouse  │
-                              │  (元数据)   │    │  (时序数据)   │
+                              │  (元数据)    │    │  (观测数据)   │
                               └─────────────┘    └──────────────┘
 ```
 
 ## 环境要求
-
-### 硬件
-
-| 资源 | 最低要求 | 建议 |
-|------|---------|------|
-| CPU | 4 核 | 8 核 |
-| 内存 | 8 GB | 16 GB |
-| 磁盘 | 50 GB | 100 GB+（SSD） |
 
 ### 软件
 
@@ -52,6 +44,7 @@ ZeroTrace 可观测性平台的服务端，负责采集数据接收、处理和�
 wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+echo 'export GOPROXY=https://goproxy.cn,direct' >> ~/.bashrc  # Go 代理
 source ~/.bashrc
 go version
 ```
@@ -63,6 +56,11 @@ go version
 sudo apt install -y protobuf-compiler
 protoc --version  # 需 ≥ 3.21
 
+# 设置 Go 代理（官方源可能无法访问）
+export GOPROXY=https://goproxy.cn,direct
+# 可写入 ~/.bashrc 永久生效：
+# echo 'export GOPROXY=https://goproxy.cn,direct' >> ~/.bashrc
+
 # 安装 protoc-gen-gofast（用于 agent 消息）
 go install github.com/gogo/protobuf/protoc-gen-gofast@latest
 
@@ -73,27 +71,10 @@ go install github.com/gogo/protobuf/protoc-gen-gogo@latest
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-#### MySQL
-
-```bash
-# 以 Ubuntu / apt 为例
-sudo apt install -y mysql-server
-sudo systemctl start mysql
-sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'deepflow'; FLUSH PRIVILEGES;"
-```
-
-#### ClickHouse
-
-```bash
-# 以 Ubuntu / apt 为例
-sudo apt install -y clickhouse-server clickhouse-client
-sudo systemctl start clickhouse-server
-```
-
 ### 2. 克隆代码
 
 ```bash
-git clone <repo-url> zerotrace-server
+git clone --recurse-submodules https://github.com/DeepShield-AI/zerotrace-server.git
 cd zerotrace-server
 ```
 
