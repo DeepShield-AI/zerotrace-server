@@ -16,20 +16,20 @@
 target/
 
 # Dependency directories
-/vendor/
-/bin/
-/cli/vendor/
-/cli/bin/
+vendor/*
+bin/
+cli/vendor/
+cli/bin/
 
 # Generated files
-/controller/cloud/aliyun/api_response.gen.go
-/controller/recorder/cache/cache_test.db
-/libs/geo/ip_info.go
-/libs/kubernetes/watcher.gen.go
-/libs/flow-metrics/pb/metric.proto
-/libs/flow-metrics/pb/metric.pb.go
-/libs/datatype/pb/flow_log.proto
-/libs/stats/pb/stats.proto
-/libs/stats/pb/stats.pb.go
+controller/cloud/aliyun/api_response.gen.go
+controller/recorder/cache/cache_test.db
+libs/geo/ip_info.go
+libs/kubernetes/watcher.gen.go
+libs/flow-metrics/pb/metric.proto
+libs/flow-metrics/pb/metric.pb.go
+libs/datatype/pb/flow_log.proto
+libs/stats/pb/stats.proto
+libs/stats/pb/stats.pb.go
 
-/.claude
+.claude
