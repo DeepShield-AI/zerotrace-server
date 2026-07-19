@@ -175,11 +175,11 @@ querier:
     port: 9000
 ```
 
-### 5. 初始化数据库
+### 6. 初始化数据库
 
 Server 首次启动时会自动在 MySQL 中创建 `deepflow` 数据库和所有表结构。
 
-### 6. 启动
+### 7. 启动
 
 ```bash
 # 确保数据库已启动（如未启动）
@@ -192,7 +192,7 @@ K8S_NODE_NAME_FOR_DEEPFLOW=$(hostname) K8S_NODE_IP_FOR_DEEPFLOW=$(hostname -I | 
 K8S_NODE_NAME_FOR_DEEPFLOW=$(hostname) K8S_NODE_IP_FOR_DEEPFLOW=$(hostname -I | awk '{print $1}') DEEPFLOW_SERVER_RUNNING_MODE=STANDALONE nohup ./bin/deepflow-server -f ./server.yaml > deepflow-server.log 2>&1 &
 ```
 
-### 7. 验证
+### 8. 验证
 
 ```bash
 # 检查 server 进程
