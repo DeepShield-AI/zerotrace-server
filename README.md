@@ -100,8 +100,6 @@ curl http://localhost:8123/ping  # ClickHouse HTTP 接口
 
 ### 4. 编译
 
-#### 完整编译
-
 ```bash
 export PATH=$PATH:$(go env GOPATH)/bin && make server
 ```
@@ -179,16 +177,7 @@ querier:
 
 ### 5. 初始化数据库
 
-Server 首次启动时会自动在 MySQL 中创建 `deepflow` 数据库和所有表结构。但需要先确保 `host_device` 中有本机记录，否则 agent 注册后会被 monitor 删除：
-
-```bash
-# 等 server 启动后，插入 host_device 记录
-mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
-  -e "INSERT INTO host_device (ip, name, type, state, htype, region, az, lcuuid) \
-       VALUES ('<宿主机IP>', '<主机名>', 1, 2, 0, \
-       'ffffffff-ffff-ffff-ffff-ffffffffffff', 'ffffffff-ffff-ffff-ffff-ffffffffffff', UUID()) \
-       ON DUPLICATE KEY UPDATE name='<主机名>';"
-```
+Server 首次启动时会自动在 MySQL 中创建 `deepflow` 数据库和所有表结构。
 
 ### 6. 启动
 
@@ -197,24 +186,13 @@ mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
 cd manifests/docker-compose && docker compose up -d mysql clickhouse && cd ../..
 
 # 启动 server
-./bin/deepflow-server -f ./server.yaml
+K8S_NODE_NAME_FOR_DEEPFLOW=$(hostname) K8S_NODE_IP_FOR_DEEPFLOW=$(hostname -I | awk '{print $1}') DEEPFLOW_SERVER_RUNNING_MODE=STANDALONE ./bin/deepflow-server -f ./server.yaml
 
 # 后台启动
-nohup ./bin/deepflow-server -f ./server.yaml > /tmp/deepflow-server.log 2>&1 &
+K8S_NODE_NAME_FOR_DEEPFLOW=$(hostname) K8S_NODE_IP_FOR_DEEPFLOW=$(hostname -I | awk '{print $1}') DEEPFLOW_SERVER_RUNNING_MODE=STANDALONE nohup ./bin/deepflow-server -f ./server.yaml > deepflow-server.log 2>&1 &
 ```
 
-### 7. 启动 Agent
-
-Agent 需以 root 权限运行：
-
-```bash
-# 从 zerotrace-agent 项目目录启动
-cd /path/to/zerotrace-agent
-sudo ZT_DATA_VIA_HTTP=false RUST_LOG=info \
-  ./target/debug/zerotrace-agent -f config/zerotrace-agent.yaml
-```
-
-### 8. 验证
+### 7. 验证
 
 ```bash
 # 检查 server 进程
@@ -225,14 +203,6 @@ curl http://localhost:20417/v1/health/
 
 # ClickHouse 可用性
 curl http://localhost:8123/ping
-
-# 确认 agent 注册
-mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
-  -e "SELECT id, name, type, state, controller_ip FROM vtap;"
-
-# 查看数据是否写入
-curl "http://localhost:8123/?query=SELECT+database,name,total_rows+FROM+system.tables+WHERE+database+IN('flow_log','flow_metrics')+AND+total_rows+IS+NOT+NULL+AND+total_rows+>+0"
-```
 
 ## 编译说明
 
@@ -317,6 +287,6 @@ go generate ./...
 | agent 连接超时 | 防火墙/安全组拦截 | 确保 30033、30035 端口可达 |
 | ClickHouse 表为空 | agent 未启动或配置错误 | 检查 agent 日志和 server 日志 |
 | server 日志 `controller ip() is invalid` | `node-ip` 未设置 | 在 `controller` 和 `ingester` 段设置 `node-ip` |
-| server 日志 `delete vtap: worker1-F0` | host_device 表缺少本机记录 | 插入 host_device 记录 |
+| server 日志 `delete vtap: worker1-F0` | host_device 表缺少本机记录 | 更新代码重新编译，fallback 已支持自动创建 |
 | agent 启动失败 `CAP_SYS_ADMIN` | 缺少 root 权限 | 使用 `sudo` 启动 agent |
 | `go mod vendor` 报错 | 网络或版本问题 | 检查 `go.mod` 中版本号，确保 Go 版本匹配 |

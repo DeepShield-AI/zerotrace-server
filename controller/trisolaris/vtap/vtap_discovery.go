@@ -921,6 +921,27 @@ func (r *VTapRegister) registerVTapByFallback(db *gorm.DB) (*models.VTap, bool) 
 	result := r.insertToDB(dbVTap, db)
 	log.Warningf(r.Logf("register agent(%s) via fallback (no platform data found), created vtap name=%s type=%d",
 		r.getKey(), vTapName, VTAP_TYPE_KVM))
+
+	// 自动创建 host_device 记录，避免 monitor 因找不到宿主机而删除该 VTap
+	var existingHost models.Host
+	if err := db.Where("ip = ?", r.ctrlIP).First(&existingHost).Error; err != nil {
+		host := &models.Host{
+			IP:     r.ctrlIP,
+			Name:   r.host,
+			Type:   1, // Server
+			State:  2, // Complete
+			HType:  0,
+			Region: r.region,
+			AZ:     r.region,
+		}
+		host.Lcuuid = uuid.NewString()
+		if createErr := db.Create(host).Error; createErr != nil {
+			log.Warningf(r.Logf("failed to auto-create host_device for %s: %s", r.ctrlIP, createErr))
+		} else {
+			log.Infof(r.Logf("auto-created host_device (ip=%s, name=%s) for vtap fallback", r.ctrlIP, r.host))
+		}
+	}
+
 	return dbVTap, result
 }
 
