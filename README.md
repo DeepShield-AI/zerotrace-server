@@ -13,149 +13,314 @@ ZeroTrace 可观测性平台的服务端，负责采集数据接收、处理和�
                                      ┌─────────┴─────────┐
                                      │                   │
                               ┌──────┴──────┐    ┌───────┴──────┐
-                              │  zt-mysql   │    │ zt-clickhouse │
+                              │    MySQL    │    │  ClickHouse  │
                               │  (元数据)   │    │  (时序数据)   │
                               └─────────────┘    └──────────────┘
 ```
 
 ## 环境要求
 
-| 依赖 | 最低版本 | 说明 |
+### 硬件
+
+| 资源 | 最低要求 | 建议 |
 |------|---------|------|
-| Docker | 24.0+ | 容器运行时 |
-| Docker Compose | v2.20+ | 服务编排 |
-| Linux | x86_64 / aarch64 | 部署宿主机 |
-| 内存 | 8 GB+ | 建议 16 GB |
-| 磁盘 | 50 GB+ | 数据持久化 |
+| CPU | 4 核 | 8 核 |
+| 内存 | 8 GB | 16 GB |
+| 磁盘 | 50 GB | 100 GB+（SSD） |
 
-## 快速部署
+### 软件
 
-### 1. 准备宿主机
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+| Go | 1.26+（见 `go.mod`） | 编译 server |
+| protoc | 3.21+ | 编译 protobuf |
+| protoc-gen-gofast | 配套 protoc | agent 消息协议编译 |
+| protoc-gen-gogo | 配套 protoc | 内部消息协议编译 |
+| MySQL | 8.0+ | 元数据存储 |
+| ClickHouse | 23.8+ | 时序数据存储 |
+| make | - | 编译调度 |
+| git | - | 版本管理 |
+
+## 本地部署指南
+
+### 1. 安装基础依赖
+
+#### Go
 
 ```bash
-# 创建数据目录
-sudo mkdir -p /opt/zt/{mysql,clickhouse,clickhouse_storage}
-
-# 确认 Docker 可用
-docker --version && docker compose version
+# 安装 Go（以 1.26 为例，版本以 go.mod 中为准）
+wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
+echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+source ~/.bashrc
+go version
 ```
 
-### 2. 配置环境变量
-
-编辑 `manifests/docker-compose/.env`：
+#### protoc 及插件
 
 ```bash
-# DeepFlow 版本（目前固定 v7.0）
-DEEPFLOW_VERSION=v7.0
+# 安装 protoc
+sudo apt install -y protobuf-compiler
+protoc --version  # 需 ≥ 3.21
 
-# 宿主机 IP——agent 通过此 IP 连接 server
-NODE_IP_FOR_DEEPFLOW=<替换为宿主机IP>
+# 安装 protoc-gen-gofast（用于 agent 消息）
+go install github.com/gogo/protobuf/protoc-gen-gofast@latest
+
+# 安装 protoc-gen-gogo（用于内部消息）
+go install github.com/gogo/protobuf/protoc-gen-gogo@latest
+
+# 确认 PATH 包含 $GOPATH/bin
+export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-### 3. 配置 server.yaml
+#### MySQL
 
-编辑 `manifests/docker-compose/common/config/server/server.yaml`：
+```bash
+# 以 Ubuntu / apt 为例
+sudo apt install -y mysql-server
+sudo systemctl start mysql
+sudo mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY 'deepflow'; FLUSH PRIVILEGES;"
+```
+
+#### ClickHouse
+
+```bash
+# 以 Ubuntu / apt 为例
+sudo apt install -y clickhouse-server clickhouse-client
+sudo systemctl start clickhouse-server
+```
+
+### 2. 克隆代码
+
+```bash
+git clone <repo-url> zerotrace-server
+cd zerotrace-server
+```
+
+### 3. 编译
+
+#### 完整编译（推荐）
+
+```bash
+make server
+```
+
+该命令会自动执行：
+
+1. `go mod tidy && go mod download && go mod vendor` — 下载依赖
+2. 应用 vendor 补丁（优化 ClickHouse 写入性能、hashmap 等）
+3. 编译 protobuf（agent/controller/k8s 等消息协议）
+4. 编译生成代码（watcher、hmap 等）
+5. `go build` 输出到 `bin/deepflow-server`
+
+#### 分步编译
+
+```bash
+# 1. 下载 vendor 依赖
+make vendor
+
+# 2. 编译 proto
+make $(make proto 2>/dev/null | head -20 | grep '.pb.go' | tr '\n' ' ')
+
+# 3. 编译 server
+go build -mod vendor -o bin/deepflow-server cmd/server/main.go cmd/server/config.go cmd/server/free_os_memory_handler.go
+```
+
+> **注意**：`.gitignore` 已忽略 `vendor/` 目录。首次编译需先 `make vendor` 生成 vendor，之后可直接 `make server`。
+
+### 4. 配置
+
+编辑 `server.yaml`，关键配置如下：
 
 ```yaml
+# 日志
+log-file: /var/log/deepflow/server.log
+log-level: info
+
 controller:
-  grpc-port: 20035            # agent 控制面 gRPC 端口
-  listen-port: 20417           # HTTP 管理端口
+  # agent 控制面 gRPC 端口
+  grpc-port: 30035
+  # HTTP 管理端口
+  listen-port: 20417
+
+  # 本机 IP（必须设置，否则 agent 无法获取控制器 IP）
+  node-ip: 10.0.0.x            # ← 替换为实际宿主机 IP
+
+  # MySQL 配置
   mysql:
-    host: mysql                # Docker 内用 service 名
-    port: 30130                # MySQL 端口（容器内）
+    enabled: true
+    database: deepflow
     user-name: root
     user-password: deepflow
+    host: 127.0.0.1
+    port: 3306
+
+  # ClickHouse 配置
   clickhouse:
-    host: clickhouse
+    database: flow_tag
+    user-name: default
+    host: 127.0.0.1
     port: 9000
+
+  # 数据节点地址（必须设置，agent 通过此地址连接 ingester）
   trisolaris:
-    tsdb-ip: <宿主机IP>         # ★ 必须设为宿主机 IP
+    tsdb-ip: 10.0.0.x           # ← 替换为实际宿主机 IP
+
+  # Redis（可选，用于缓存，可关闭）
+  redis:
+    enabled: false
+
 ingester:
+  # 数据接收端口
+  listen-port: 30033
+  # 本机 IP（必须设置）
+  node-ip: 10.0.0.x             # ← 替换为实际宿主机 IP
+  controller-ips:
+    - 127.0.0.1
+  controller-port: 30035
+
   ckdb:
-    host: clickhouse
+    host: 127.0.0.1
     port: 9000
+
 querier:
-  listen-port: 20416           # 查询 API 端口
+  # 查询 API 端口
+  listen-port: 20416
+  clickhouse:
+    host: 127.0.0.1
+    port: 9000
 ```
 
-> ⚠️ `trisolaris.tsdb-ip` 必须设为宿主机 IP，否则 agent 无法获取 ingester 地址。
+### 5. 初始化数据库
 
-### 4. 启动
+Server 首次启动时会自动在 MySQL 中创建 `deepflow` 数据库和所有表结构。但需要先确保 `host_device` 中有本机记录，否则 agent 注册后会被 monitor 删除：
 
 ```bash
-cd manifests/docker-compose
-docker compose up -d
+# 等 server 启动后，插入 host_device 记录
+mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
+  -e "INSERT INTO host_device (ip, name, type, state, htype, region, az, lcuuid) \
+       VALUES ('<宿主机IP>', '<主机名>', 1, 2, 0, \
+       'ffffffff-ffff-ffff-ffff-ffffffffffff', 'ffffffff-ffff-ffff-ffff-ffffffffffff', UUID()) \
+       ON DUPLICATE KEY UPDATE name='<主机名>';"
 ```
 
-### 5. 验证
+### 6. 启动
 
 ```bash
-# 容器状态
-docker ps | grep zt-
+# 启动 MySQL、ClickHouse（如未启动）
+sudo systemctl start mysql
+sudo systemctl start clickhouse-server
 
-# 预期输出：
-# zt-server      Up   0.0.0.0:20416->20416/tcp, 0.0.0.0:30033->20033/tcp, ...
-# zt-clickhouse  Up   0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp
-# zt-mysql       Up   0.0.0.0:3306->30130/tcp
+# 启动 server
+./bin/deepflow-server -f ./server.yaml
 
-# 服务健康检查
-curl http://localhost:30417/v1/health/
-# → {"OPT_STATUS":"SUCCESS","DESCRIPTION":"","DATA":null}
+# 后台启动
+nohup ./bin/deepflow-server -f ./server.yaml > /tmp/deepflow-server.log 2>&1 &
+```
+
+### 7. 启动 Agent
+
+Agent 需以 root 权限运行：
+
+```bash
+# 从 zerotrace-agent 项目目录启动
+cd /path/to/zerotrace-agent
+sudo ZT_DATA_VIA_HTTP=false RUST_LOG=info \
+  ./target/debug/zerotrace-agent -f config/zerotrace-agent.yaml
+```
+
+### 8. 验证
+
+```bash
+# 检查 server 进程
+ps aux | grep deepflow-server
+
+# 健康检查
+curl http://localhost:20417/v1/health/
 
 # ClickHouse 可用性
 curl http://localhost:8123/ping
-# → Ok.
+
+# 确认 agent 注册
+mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
+  -e "SELECT id, name, type, state, controller_ip FROM vtap;"
+
+# 查看数据是否写入
+curl "http://localhost:8123/?query=SELECT+database,name,total_rows+FROM+system.tables+WHERE+database+IN('flow_log','flow_metrics')+AND+total_rows+IS+NOT+NULL+AND+total_rows+>+0"
+```
+
+## 编译说明
+
+### Makefile 目标
+
+| 目标 | 说明 |
+|------|------|
+| `make all` | 编译 server（默认） |
+| `make server` | 编译 server 二进制 |
+| `make vendor` | 下载依赖 + 打 vendor 补丁 |
+| `make test` | 运行测试 |
+| `make clean` | 清理编译产物 |
+| `make proto` | 编译所有 .proto 文件 |
+
+### Vendor 补丁
+
+`make vendor` 会应用以下补丁，优化运行时性能：
+
+| 补丁 | 位置 | 作用 |
+|------|------|------|
+| clickhouse-go/write_improve.patch | `patch/clickhouse-go/` | 优化 Array(string) 写入性能 |
+| clickhouse-go/nullable.patch | `patch/clickhouse-go/` | 修复 nullable 字段指针重置 |
+| clickhouse-go/datetime_uint32.patch | `patch/clickhouse-go/` | 优化 datetime 写入 |
+| clickhouse-go/reduce_connection_memory.patch | `patch/clickhouse-go/` | 减少连接内存占用 |
+| cornelk_hashmap/perf.patch | `patch/cornelk_hashmap/` | 优化大批量写入时 hashmap 性能 |
+| cornelk_hashmap/complex128.patch | `patch/cornelk_hashmap/` | hashmap 支持 [2]uint64 key |
+
+### 代码生成
+
+以下代码由 `go generate` 自动生成，修改模板后需重新生成：
+
+- `libs/hmap/idmap/ubig_id_map.go` — ID 映射表
+- `libs/hmap/lru/ubig_lru.go` — LRU 缓存
+- `libs/flow-metrics/pooled_meters.go` — 指标池
+- `libs/kubernetes/watcher.gen.go` — K8s Watcher
+- `libs/geo/ip_info.go` — IP 地理信息
+
+```bash
+# 重新生成所有生成代码
+go generate ./...
 ```
 
 ## 端口参考
 
-| 容器端口 | 宿主机端口 | 模块 | 协议 | 用途 |
-|---------|-----------|------|------|------|
-| 20033 | 30033 | ingester | TCP | agent 数据写入 |
-| 20035 | 30035 | controller | gRPC | agent 控制面同步 |
-| 20416 | 20416 | querier | HTTP | 数据查询 API |
-| 20417 | 30417 | controller | HTTP | 管理 API |
-| 20419 | 20419 | profile | HTTP | 性能分析 |
-| 9000 | 9000 | ClickHouse | TCP | 数据库原生协议 |
-| 8123 | 8123 | ClickHouse | HTTP | 数据库 HTTP 接口 |
-| 30130 | 3306 | MySQL | TCP | 数据库连接 |
+| 端口 | 模块 | 协议 | 用途 |
+|------|------|------|------|
+| 30033 | ingester | TCP | agent 数据写入 |
+| 30035 | controller | gRPC | agent 控制面同步 |
+| 20416 | querier | HTTP | 数据查询 API |
+| 20417 | controller | HTTP | 管理 API |
+| 20419 | profile | HTTP | 性能分析 |
+| 9000 | ClickHouse | TCP | 数据库原生协议 |
+| 8123 | ClickHouse | HTTP | 数据库 HTTP 接口 |
+| 3306 | MySQL | TCP | 数据库连接 |
 
-## 常用运维
-
-```bash
-# 查看日志
-docker logs zt-server -f --tail 100
-
-# 重启
-cd manifests/docker-compose && docker compose restart
-
-# 停止
-cd manifests/docker-compose && docker compose down
-
-# 升级（修改 .env 版本号后）
-cd manifests/docker-compose && docker compose pull && docker compose up -d
-
-# 数据检查
-docker exec zt-clickhouse clickhouse-client \
-  --query "SELECT count() FROM flow_log.l7_flow_log"
-
-docker exec zt-mysql mysql -uroot -pdeepflow \
-  -e "SELECT id,name,ip,hostname FROM deepflow.vtap"
-```
-
-## 配置文件一览
+## 项目结构
 
 ```
-manifests/docker-compose/
-├── .env                          # 版本号 + 宿主机 IP
-├── docker-compose.yaml           # 容器编排
-└── common/config/
-    ├── server/server.yaml        # zt-server 核心配置
-    ├── clickhouse/config.xml     # ClickHouse 引擎配置
-    ├── clickhouse/users.xml      # 数据库用户权限
-    └── mysql/
-        ├── my.cnf                # MySQL 引擎配置
-        └── init.sql              # 首次初始化 SQL
+├── cmd/server/           # 入口 main
+├── controller/           # 控制器（gRPC、HTTP API、agent 管理）
+│   ├── grpc/             #   gRPC 服务
+│   ├── monitor/          #   健康检查、VTap 生命周期管理
+│   └── trisolaris/       #   核心调度逻辑
+├── ingester/             # 数据写入（ClickHouse）
+├── querier/              # 数据查询
+├── libs/                 # 公共库
+│   ├── datatype/pb/      #   数据类型 proto
+│   ├── flow-metrics/pb/  #   指标 proto
+│   └── stats/pb/         #   统计 proto
+├── message/              # protobuf 消息定义
+├── patch/                # vendor 补丁
+├── server.yaml           # 服务端配置
+└── Makefile              # 编译
 ```
 
 ## 故障排查
@@ -166,4 +331,7 @@ manifests/docker-compose/
 | agent 日志 `http sync: 404` | 未设置 `ZT_DATA_VIA_HTTP=false` | 启动 agent 时加上环境变量 |
 | agent 连接超时 | 防火墙/安全组拦截 | 确保 30033、30035 端口可达 |
 | ClickHouse 表为空 | agent 未启动或配置错误 | 检查 agent 日志和 server 日志 |
-| server 日志 `no proxy_controller_ip` | NAT IP 配置问题 | 检查 `server.yaml` 中 controller IP 相关配置 |
+| server 日志 `controller ip() is invalid` | `node-ip` 未设置 | 在 `controller` 和 `ingester` 段设置 `node-ip` |
+| server 日志 `delete vtap: worker1-F0` | host_device 表缺少本机记录 | 插入 host_device 记录 |
+| agent 启动失败 `CAP_SYS_ADMIN` | 缺少 root 权限 | 使用 `sudo` 启动 agent |
+| `go mod vendor` 报错 | 网络或版本问题 | 检查 `go.mod` 中版本号，确保 Go 版本匹配 |
