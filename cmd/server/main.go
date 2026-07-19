@@ -57,6 +57,9 @@ var flagSet = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 var configPath = flagSet.String("f", "/etc/server.yaml", "Specify config file location")
 var version = flagSet.Bool("v", false, "Display the version")
 
+// Also register -f on default FlagSet so glog doesn't choke on it during its own flag.Parse()
+func init() { flag.String("f", "/etc/server.yaml", "Specify config file location") }
+
 var Branch, RevCount, Revision, CommitDate, goVersion, CompileTime string
 
 func main() {

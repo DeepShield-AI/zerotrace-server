@@ -17,7 +17,7 @@
 package schema
 
 const (
-	RAW_SQL_ROOT_DIR = "/etc/metadb/schema/rawsql"
+	RAW_SQL_ROOT_DIR = "controller/db/metadb/migrator/schema/rawsql"
 
 	DB_VERSION_TABLE    = "db_version"
 	DB_VERSION_EXPECTED = "7.1.0.40"
