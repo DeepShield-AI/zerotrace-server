@@ -71,9 +71,16 @@ go install github.com/gogo/protobuf/protoc-gen-gogo@latest
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-### 2. 启动 MySQL 和 ClickHouse
+### 2. 克隆代码
 
-MySQL 和 ClickHouse 通过 Docker Compose 启动，避免本地安装数据库：
+```bash
+git clone --recurse-submodules https://github.com/DeepShield-AI/zerotrace-server.git
+cd zerotrace-server
+```
+
+### 3. 启动 MySQL 和 ClickHouse
+
+数据库通过 Docker Compose 启动，无需本地安装：
 
 ```bash
 # 创建数据目录
@@ -89,14 +96,7 @@ docker ps | grep -E "zt-mysql|zt-clickhouse"
 curl http://localhost:8123/ping  # ClickHouse HTTP 接口
 ```
 
-> 数据库端口映射：MySQL `3306:30130`、ClickHouse `9000:9000` / `8123:8123`。
-
-### 3. 克隆代码
-
-```bash
-git clone --recurse-submodules https://github.com/DeepShield-AI/zerotrace-server.git
-cd zerotrace-server
-```
+> 端口映射：MySQL `3306:30130`（宿主机 3306 → 容器 30130）、ClickHouse `9000:9000` / `8123:8123`。
 
 ### 4. 编译
 
@@ -114,7 +114,7 @@ export PATH=$PATH:$(go env GOPATH)/bin && make server
 4. 编译生成代码（watcher、hmap 等）
 5. `go build` 输出到 `bin/deepflow-server`
 
-### 4. 配置
+### 5. 配置
 
 编辑 `server.yaml`，关键配置如下：
 
