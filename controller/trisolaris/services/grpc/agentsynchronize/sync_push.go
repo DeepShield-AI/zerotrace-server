@@ -67,6 +67,10 @@ func (e *AgentEvent) generateUserConfig(c *vtap.VTapCache, gAgentInfo *vtap.VTap
 	configTSDBIP := gAgentInfo.GetConfigTSDBIP()
 	if configTSDBIP != "" {
 		userConfig.Set(CONFIG_KEY_INGESTER_IP, configTSDBIP)
+	} else if nodeIP := GetNodeIP(); nodeIP != "" {
+		userConfig.Set(CONFIG_KEY_INGESTER_IP, nodeIP)
+		userConfig.Set(CONFIG_KEY_PROXY_CONTROLLER_IP, nodeIP)
+		log.Infof("agent(%s) ingester_ip/proxy_controller_ip fallback to node_ip: %s", c.GetCtrlIP(), nodeIP)
 	}
 
 	natIPEnabled := userConfig.Bool("global.communication.request_via_nat_ip")
@@ -83,8 +87,13 @@ func (e *AgentEvent) generateUserConfig(c *vtap.VTapCache, gAgentInfo *vtap.VTap
 		userConfig.Set(CONFIG_KEY_INGESTER_PORT, trisolaris.GetIngesterPort())
 	}
 	if userConfig.String(CONFIG_KEY_PROXY_CONTROLLER_IP) == "" {
-		log.Errorf("agent(%s) has no proxy_controller_ip, "+
-			"Please check whether the agent allocs controller IP or If nat-ip is enabled, whether the controller is configured with nat-ip", c.GetCtrlIP())
+		if configTSDBIP != "" {
+			userConfig.Set(CONFIG_KEY_PROXY_CONTROLLER_IP, configTSDBIP)
+			log.Infof("agent(%s) proxy_controller_ip fallback to tsdb_ip: %s", c.GetCtrlIP(), configTSDBIP)
+		} else {
+			log.Errorf("agent(%s) has no proxy_controller_ip, "+
+				"Please check whether the agent allocs controller IP or If nat-ip is enabled, whether the controller is configured with nat-ip", c.GetCtrlIP())
+		}
 	}
 
 	if c.GetVTapEnabled() == 0 {

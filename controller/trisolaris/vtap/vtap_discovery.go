@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -879,6 +881,49 @@ func (r *VTapRegister) registerVTapByCtrlIP(db *gorm.DB) (*models.VTap, bool) {
 	return dbVTap, result
 }
 
+func (r *VTapRegister) registerVTapByFallback(db *gorm.DB) (*models.VTap, bool) {
+	r.setRegisterBy("registerVTapByFallback")
+	vTapName := fmt.Sprintf("%s-F0", r.host)
+	// 社区版默认开启全部 license 功能（与 pseudo_license.go 保持一致）
+	functions := []string{
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_NET_NPB),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_NET_NPMD),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_NET_DPDK),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_TRACE_NET),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_TRACE_SYS),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_TRACE_APP),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_TRACE_IO),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_TRACE_BIZ),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_PROFILE_CPU),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_PROFILE_RAM),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_PROFILE_INT),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_LEGACY_METRIC),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_LEGACY_LOG),
+		strconv.Itoa(AGENT_LICENSE_FUNCTION_LEGACY_PROBE),
+	}
+	dbVTap := &models.VTap{
+		CtrlIP:          r.ctrlIP,
+		CtrlMac:         r.ctrlMac,
+		Type:            VTAP_TYPE_KVM,
+		LaunchServer:    r.ctrlIP,
+		Name:            vTapName,
+		State:           VTAP_STATE_PENDING,
+		TapMode:         r.tapMode,
+		TeamID:          r.teamID,
+		VtapGroupLcuuid: r.getVTapGroupLcuuid(db),
+		Lcuuid:          uuid.NewString(),
+		LicenseType:     VTAP_LICENSE_TYPE_A,
+		LicenseFunctions: strings.Join(functions, ","),
+	}
+	if r.vTapAutoRegister {
+		dbVTap.State = VTAP_STATE_NORMAL
+	}
+	result := r.insertToDB(dbVTap, db)
+	log.Warningf(r.Logf("register agent(%s) via fallback (no platform data found), created vtap name=%s type=%d",
+		r.getKey(), vTapName, VTAP_TYPE_KVM))
+	return dbVTap, result
+}
+
 func (r *VTapRegister) registerVTapByCtrlIPMac(db *gorm.DB) (vtap *models.VTap, ok bool) {
 	switch r.tapMode {
 	case TAPMODE_LOCAL:
@@ -895,6 +940,10 @@ func (r *VTapRegister) registerVTapByCtrlIPMac(db *gorm.DB) (vtap *models.VTap, 
 			break
 		}
 		vtap, ok = r.registerLocalVTapByIP(db)
+		if ok == true {
+			break
+		}
+		vtap, ok = r.registerVTapByFallback(db)
 	case TAPMODE_MIRROR:
 		vtap, ok = r.registerVTapByHost(db)
 		if ok == true {
@@ -909,6 +958,10 @@ func (r *VTapRegister) registerVTapByCtrlIPMac(db *gorm.DB) (vtap *models.VTap, 
 			break
 		}
 		vtap, ok = r.registerMirrorVTapByIP(db)
+		if ok == true {
+			break
+		}
+		vtap, ok = r.registerVTapByFallback(db)
 	case TAPMODE_ANALYZER:
 		vtap, ok = r.registerVTapAnalyzerTapMode(db)
 
