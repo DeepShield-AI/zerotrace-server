@@ -16,7 +16,7 @@
 target/
 
 # Dependency directories
-vendor/*
+vendor/
 bin/
 cli/vendor/
 cli/bin/
