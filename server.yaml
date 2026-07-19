@@ -16,7 +16,7 @@ log-level: info
 #  profile-types: ["cpu", "inuse_objects", "alloc_objects", "inuse_space", "alloc_space"]
 #  mutex-rate: 5 # valid when ProfileTypes contains 'mutex_count' or 'mutex_duration'
 #  block-rate: 5 # valid when ProfileTypes contains 'block_count' or 'block_duration'
-#  log-enabled: true # whether record profile debug logs
+#  log-enabled: false # whether record profile debug logs
 
 ## every `interval`, call debug.FreeOSMemory()(https://pkg.go.dev/runtime/debug#FreeOSMemory) to release OS memory.
 #free-os-memory-manager:
@@ -41,7 +41,7 @@ controller:
   #listen-port: 20417
   #listen-node-port: 30417
   ## grpc server port
-  #grpc-port: 20035
+  grpc-port: 30035
   #ssl-grpc-port: 20135
   #agent_ssl_cert_file: /etc/ssl/server.key
   #agent_ssl_key_file: /etc/ssl/server.pem
@@ -127,8 +127,8 @@ controller:
     database: deepflow
     user-name: root
     user-password: deepflow
-    host: mysql
-    port: 30130
+    host: 127.0.0.1
+    port: 3306
     proxy-host:
     proxy-port:
     timeout: 30
@@ -181,14 +181,14 @@ controller:
 
   # redis相关配置
   redis:
-    enabled: true
+    enabled: false
     cluster_enabled: false
     resource_api_database: 1
     resource_api_expire_interval: 3600
     dimension_resource_database: 2
     password: deepflow
     host:
-      - redis
+      - 127.0.0.1
     port: 6379
     timeout: 30
 
@@ -196,7 +196,7 @@ controller:
   clickhouse:
     database: flow_tag
     user-name: default
-    host: clickhouse
+    host: 127.0.0.1
     port: 9000
     # user-password:
     endpoint-tcp-port-name: tcp-port
@@ -259,7 +259,7 @@ controller:
       rebalance-interval: 3600
     ## automatically delete lost vtaps
     # vtap_auto_delete:
-    #   enabled: true
+    #   enabled: false
     #   # if current time - vtap lost time >= lost_time_max, vtap will be deleted
     #   # uint: s
     #   lost_time_max: 3600
@@ -334,14 +334,14 @@ controller:
           # context lines count for config diff
           config_diff_context: 3
         self_heal: 
-          enabled: true
+          enabled: false
           resources:
           #  - pod_service
           #  - pod_group
           #  - pod
           #  - config_map
         tagrecorder_self_heal: 
-          enabled: true
+          enabled: false
   tagrecorder:
     # size of data in batch operation for MySQL
     mysql_batch_size: 1000
@@ -350,7 +350,7 @@ controller:
     dictionary_reload_interval: 3600
 
   trisolaris:
-    tsdb_ip:
+    tsdb-ip: 202.112.237.37
     chrony:
       host: 127.0.0.1
       port: 123
@@ -358,7 +358,7 @@ controller:
 
     # grpc service push config
     push:
-      enabled: true
+      enabled: false
       # unit: second , min: 1 max: 10
       delay-max: 0
 
@@ -461,7 +461,7 @@ querier:
   clickhouse:
     database: flow_tag
     user-name: default
-    host: clickhouse
+    host: 127.0.0.1
     port: 9000
     timeout: 60
     max-connection: 20
@@ -583,20 +583,20 @@ ingester:
   #  password:
 
   # local node ip, if not set will get from environment variable 'NODE_IP', dafault: ""
-  #node-ip:
+  node-ip: 202.112.237.37
 
   ## trisolaris的ips, 默认值为空
-  #controller-ips:
-  #  - x.x.x.x
+  controller-ips:
+    - 127.0.0.1
 
   ## controller listening port
-  #controller-port: 20035
+  controller-port: 30035
 
   ## stats collect interval(unit: s)
   # stats-interval: 10
 
   ## The listening port used by Ingester to receive data
-  #listen-port: 20033
+  listen-port: 30033
   #
   ## The listening port used by Ingester to handle datasource API
   #datasource-listen-port: 20106
@@ -783,7 +783,7 @@ ingester:
   #    tables-contain: file_event_local
 
   ## ingester模块是否启用，默认启用, 若不启用(表示处于单独的控制器)
-  #ingester-enabled: true
+  #ingester-enabled: false
 
   # whether to enable deepflow-aget syslog to write to files in syslog-directory
   #agent-log-to-file: false
@@ -849,7 +849,7 @@ ingester:
 
   #exporters:
   #- protocol: kafka
-  #  enabled: true
+  #  enabled: false
   #  # randomly select an address that can be sent successfully. Kafka address format as: 'broker1.example.com:9092'
   #  endpoints: [broker1.example.com:9092, broker2.example.com:9092]
   #  # the data source that needs to be exported format as $db_name.$table_name, is also the topic name of Kafka
@@ -912,7 +912,7 @@ ingester:
   #    password: bbb
   #  topic:  # If the value is empty, use the value of `deepflow.$data-source` as the kafka topic (eg, `deepflow.flow_log.l7_flow_log`). If it is not empty, use the value as the kafka topic.
   #- protocol: prometheus
-  #  enabled: true
+  #  enabled: false
   #  # randomly select an address that can be sent successfully, prometheus address format as: http://127.0.0.1:9091/receive
   #  endpoints: [http://127.0.0.1:9091/receive, http://1.1.1.1:9091/receive]
   #  data-sources: # currently only supports 'flow_metrics.*'
@@ -940,7 +940,7 @@ ingester:
   #  enum-translate-to-name-disabled: false
   #  universal-tag-translate-to-name-disabled: false
   #- protocol: opentelemetry
-  #  enabled: true
+  #  enabled: false
   #  # Randomly select an address that can be sent successfully, otlp address format as: 127.0.0.1:4317, only supports grpc protocol
   #  endpoints: [127.0.0.1:4317, 1.1.1.1:4317]
   #  data-sources: # currently only supports 'flow_log.l7_flow_log'
