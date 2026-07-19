@@ -1,85 +1,169 @@
-<p align="center">
-  <img src="./docs/deepflow-logo.png" alt="DeepFlow" width="300" />
+# ZeroTrace Server
 
-  <p align="center">Instant Observability for Cloud & AI Applications</p>
-  <p align="center">Zero Code, Full Stack, eBPF & Wasm</p>
-</p>
-<p align="center">
-    <a href="https://zenodo.org/badge/latestdoi/448599559"><img src="https://zenodo.org/badge/448599559.svg" alt="DOI"></a>
-    <img alt="GitHub Release" src="https://img.shields.io/github/v/release/deepflowio/deepflow"> </a>
-    <img alt="GitCode" src="https://gitcode.com/DeepFlow/deepflow/star/badge.svg"> </a>
-    <img alt="docker pulls" src="https://img.shields.io/docker/pulls/deepflowce/deepflow-agent?color=green&label=docker%20pulls"> </a>
-    <img alt="License" src="https://img.shields.io/github/license/deepflowio/deepflow?color=purple"> </a>
-</p>
+ZeroTrace 可观测性平台的服务端，负责采集数据接收、处理和存储。
 
--------------
+## 系统架构
 
-English | [简体中文](./README-CN.md) | [日本語](./README-JP.md)
+```
+┌─────────────────┐     gRPC + TCP      ┌──────────────────────┐
+│  zerotrace-agent │ ──────────────────→ │    zt-server         │
+│  (每台宿主机)    │                     │  (控制器+写入+查询)  │
+└─────────────────┘                     └──────┬───────────────┘
+                                               │
+                                     ┌─────────┴─────────┐
+                                     │                   │
+                              ┌──────┴──────┐    ┌───────┴──────┐
+                              │  zt-mysql   │    │ zt-clickhouse │
+                              │  (元数据)   │    │  (时序数据)   │
+                              └─────────────┘    └──────────────┘
+```
 
-# What is DeepFlow
+## 环境要求
 
-The DeepFlow open-source project aims to provide deep observability for complex cloud-native and AI applications. DeepFlow implemented **Zero Code** data collection with eBPF for metrics, distributed tracing, request logs and function profiling, and is further integrated with **SmartEncoding** to achieve **Full Stack** correlation and efficient access to all observability data. With DeepFlow, cloud-native and AI applications automatically gain deep observability, removing the heavy burden of developers continually instrumenting code and providing monitoring and diagnostic capabilities covering everything from code to infrastructure for DevOps/SRE teams.
+| 依赖 | 最低版本 | 说明 |
+|------|---------|------|
+| Docker | 24.0+ | 容器运行时 |
+| Docker Compose | v2.20+ | 服务编排 |
+| Linux | x86_64 / aarch64 | 部署宿主机 |
+| 内存 | 8 GB+ | 建议 16 GB |
+| 磁盘 | 50 GB+ | 数据持久化 |
 
-# Key Features
+## 快速部署
 
-- **Universal Map** for **Any** Service: DeepFlow provides a universal map with **Zero Code** by eBPF for production environments, including application services, AI services, and infrastructure services in any language. In addition to analyzing common protocols, Wasm plugins are supported for your private protocols. **Full Stack** golden signals of applications and infrastructures are calculated, pinpointing performance bottlenecks at ease.
-- **Distributed Tracing** for **Any** Request: **Zero Code** distributed tracing powered by eBPF supports applications in any language and infrastructures including gateways, service meshes, databases, message queues, DNS and NICs, leaving no blind spots. **Full Stack** network performance metrics and file I/O events are automatically collected for each Span. Distributed tracing enters a new era: Zero Instrumentation.
-- **Continuous Profiling** for **Any** Function: DeepFlow collects profiling data at a cost of below 1% with **Zero Code**, plots OnCPU/OffCPU/GPU/Memory/Network function call stack flame graphs, locates **Full Stack** performance bottleneck in business functions, library and framework functions, runtime functions, shared library functions, kernel function, CUDA functions, and automatically relates them to distrubuted tracing data.
-- **Seamless Integration** with Popular Stack: DeepFlow can serve as storage backed for Prometheus, OpenTelemetry, SkyWalking and Pyroscope. It also provides **SQL, PromQL and OLTP** APIs to work as data source in popular observability stacks. It injects meta tags for all observability signals including cloud resource, K8s container, K8s labels, K8s annotations, CMDB business attributes, etc., eliminating data silos.
-- **Performance 10x ClickHouse**: **SmartEncoding** injects standardized and pre-encoded meta tags into all observability data, reducing storage overhead by 10x compared to ClickHouse String or LowCard method. Custom tags and observability data are stored separately, making tags available for almost unlimited dimensions and cardinalities with uncompromised query experience like **BigTable**.
+### 1. 准备宿主机
 
-# Documentation
+```bash
+# 创建数据目录
+sudo mkdir -p /opt/zt/{mysql,clickhouse,clickhouse_storage}
 
-For more information, please visit [the documentation website](https://deepflow.io/docs/?from=github).
+# 确认 Docker 可用
+docker --version && docker compose version
+```
 
-# Quick start
+### 2. 配置环境变量
 
-There are three editions of DeepFlow:
-- DeepFlow Community: for developers
-- DeepFlow Enterprise: for organizations, solving team collaboration problems
-- DeepFlow Cloud: SaaS service, currently in beta
+编辑 `manifests/docker-compose/.env`：
 
-The DeepFlow Community Edition consists of the core components of the Enterprise Edition.
+```bash
+# DeepFlow 版本（目前固定 v7.0）
+DEEPFLOW_VERSION=v7.0
 
-## DeepFlow Community
+# 宿主机 IP——agent 通过此 IP 连接 server
+NODE_IP_FOR_DEEPFLOW=<替换为宿主机IP>
+```
 
-Please refer to [the deployment documentation](https://deepflow.io/docs/ce-install/all-in-one/?from=github).
+### 3. 配置 server.yaml
 
-At the same time, we have also built a complete [DeepFlow Community Demo](https://ce-demo.deepflow.yunshan.net/?from=github), welcome to experience it. Login account/password: deepflow / deepflow-2026
+编辑 `manifests/docker-compose/common/config/server/server.yaml`：
 
-## DeepFlow Enterprise
+```yaml
+controller:
+  grpc-port: 20035            # agent 控制面 gRPC 端口
+  listen-port: 20417           # HTTP 管理端口
+  mysql:
+    host: mysql                # Docker 内用 service 名
+    port: 30130                # MySQL 端口（容器内）
+    user-name: root
+    user-password: deepflow
+  clickhouse:
+    host: clickhouse
+    port: 9000
+  trisolaris:
+    tsdb-ip: <宿主机IP>         # ★ 必须设为宿主机 IP
+ingester:
+  ckdb:
+    host: clickhouse
+    port: 9000
+querier:
+  listen-port: 20416           # 查询 API 端口
+```
 
-You can visit the [DeepFlow Enterprise Demo](https://deepflow.io/), currently available in Chinese only.
+> ⚠️ `trisolaris.tsdb-ip` 必须设为宿主机 IP，否则 agent 无法获取 ingester 地址。
 
-# Compile DeepFlow from Source
+### 4. 启动
 
-- [compile deepflow-agent](./agent/build.md)
+```bash
+cd manifests/docker-compose
+docker compose up -d
+```
 
-# Software Architecture
+### 5. 验证
 
-DeepFlow Community Edition consists of two components, Agent and Server. An Agent runs in each K8s node, legacy host and cloud host, and is responsible for AutoMetrics and AutoTracing data collection of all application processes on the host. Server runs in a K8s cluster and provides Agent management, tag injection, data ingest and query services.
+```bash
+# 容器状态
+docker ps | grep zt-
 
-![DeepFlow Architecture](./docs/deepflow-architecture.png)
+# 预期输出：
+# zt-server      Up   0.0.0.0:20416->20416/tcp, 0.0.0.0:30033->20033/tcp, ...
+# zt-clickhouse  Up   0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp
+# zt-mysql       Up   0.0.0.0:3306->30130/tcp
 
-# Milestones
+# 服务健康检查
+curl http://localhost:30417/v1/health/
+# → {"OPT_STATUS":"SUCCESS","DESCRIPTION":"","DATA":null}
 
-Here is our [future feature plan](https://deepflow.io/docs/about/milestone/?from=github). Issues and Pull Requests are welcome.
+# ClickHouse 可用性
+curl http://localhost:8123/ping
+# → Ok.
+```
 
-# Contact Us
+## 端口参考
 
-- Discord：Click [here](https://discord.gg/QJ7Dyj4wWM) to join our discussion.
-- Twitter：[DeepFlow](https://twitter.com/deepflowio)
-- WeChat Group：
-<img src=./docs/wechat-group-keeper.png width=30% />
+| 容器端口 | 宿主机端口 | 模块 | 协议 | 用途 |
+|---------|-----------|------|------|------|
+| 20033 | 30033 | ingester | TCP | agent 数据写入 |
+| 20035 | 30035 | controller | gRPC | agent 控制面同步 |
+| 20416 | 20416 | querier | HTTP | 数据查询 API |
+| 20417 | 30417 | controller | HTTP | 管理 API |
+| 20419 | 20419 | profile | HTTP | 性能分析 |
+| 9000 | 9000 | ClickHouse | TCP | 数据库原生协议 |
+| 8123 | 8123 | ClickHouse | HTTP | 数据库 HTTP 接口 |
+| 30130 | 3306 | MySQL | TCP | 数据库连接 |
 
-# Acknowledgments
+## 常用运维
 
-- Thanks [eBPF](https://ebpf.io/), a revolutionary Linux kernel technology.
-- Thanks [OpenTelemetry](https://opentelemetry.io/), provides vendor-neutral APIs to collect application telemetry data.
+```bash
+# 查看日志
+docker logs zt-server -f --tail 100
 
-# Honors
+# 重启
+cd manifests/docker-compose && docker compose restart
 
-- The paper [Network-Centric Distributed Tracing with DeepFlow: Troubleshooting Your Microservices in Zero Code](https://dl.acm.org/doi/10.1145/3603269.3604823) has been accepted by ACM SIGCOMM 2023.
-- DeepFlow enriches the <a href="https://landscape.cncf.io/?selected=deep-flow">CNCF CLOUD NATIVE Landscape</a>.
-- DeepFlow enriches the <a href="https://landscape.cncf.io/?selected=deep-flow&group=cnai&item=cnai--model-llm-observability--deepflow">CNCF CNAI (Cloud-Native AI) Landscape</a>.
-- DeepFlow enriches the <a href="https://ebpf.io/applications#deepflow">eBPF Project Landscape</a>.
+# 停止
+cd manifests/docker-compose && docker compose down
+
+# 升级（修改 .env 版本号后）
+cd manifests/docker-compose && docker compose pull && docker compose up -d
+
+# 数据检查
+docker exec zt-clickhouse clickhouse-client \
+  --query "SELECT count() FROM flow_log.l7_flow_log"
+
+docker exec zt-mysql mysql -uroot -pdeepflow \
+  -e "SELECT id,name,ip,hostname FROM deepflow.vtap"
+```
+
+## 配置文件一览
+
+```
+manifests/docker-compose/
+├── .env                          # 版本号 + 宿主机 IP
+├── docker-compose.yaml           # 容器编排
+└── common/config/
+    ├── server/server.yaml        # zt-server 核心配置
+    ├── clickhouse/config.xml     # ClickHouse 引擎配置
+    ├── clickhouse/users.xml      # 数据库用户权限
+    └── mysql/
+        ├── my.cnf                # MySQL 引擎配置
+        └── init.sql              # 首次初始化 SQL
+```
+
+## 故障排查
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| agent 日志 `no ingester_ip` | server.yaml 缺少 `tsdb-ip` | 设置 `trisolaris.tsdb-ip` 为宿主机 IP |
+| agent 日志 `http sync: 404` | 未设置 `ZT_DATA_VIA_HTTP=false` | 启动 agent 时加上环境变量 |
+| agent 连接超时 | 防火墙/安全组拦截 | 确保 30033、30035 端口可达 |
+| ClickHouse 表为空 | agent 未启动或配置错误 | 检查 agent 日志和 server 日志 |
+| server 日志 `no proxy_controller_ip` | NAT IP 配置问题 | 检查 `server.yaml` 中 controller IP 相关配置 |

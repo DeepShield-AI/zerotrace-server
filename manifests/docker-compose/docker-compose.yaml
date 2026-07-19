@@ -1,0 +1,72 @@
+services:
+  mysql:
+    image: registry.cn-hongkong.aliyuncs.com/deepflow-ce/mysql:8.0.31
+    container_name: zt-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: deepflow
+      MYSQL_DATABASE: grafana
+      TZ: Asia/Shanghai
+    volumes:
+      - type: bind
+        source: ./common/config/mysql/my.cnf
+        target: /etc/my.cnf
+      - type: bind
+        source: ./common/config/mysql/init.sql
+        target: /docker-entrypoint-initdb.d/init.sql
+      - /opt/zt/mysql:/var/lib/mysql:z
+    ports:
+      - "3306:30130"
+    networks:
+      - zt
+  clickhouse:
+    image: registry.cn-hongkong.aliyuncs.com/deepflow-ce/clickhouse-server:23.8.7.24
+    container_name: zt-clickhouse
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - type: bind
+        source: ./common/config/clickhouse/config.xml
+        target: /etc/clickhouse-server/config.xml
+      - type: bind
+        source: ./common/config/clickhouse/users.xml
+        target: /etc/clickhouse-server/users.xml
+      - /opt/zt/clickhouse:/var/lib/clickhouse:z
+      - /opt/zt/clickhouse_storage:/var/lib/clickhouse_storage:z
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    networks:
+      - zt
+  server:
+    image: registry.cn-hongkong.aliyuncs.com/deepflow-ce/deepflow-server:${DEEPFLOW_VERSION}
+    container_name: zt-server
+    restart: always
+    environment:
+      DEEPFLOW_SERVER_RUNNING_MODE: STANDALONE
+      K8S_POD_IP_FOR_DEEPFLOW: 127.0.0.1
+      K8S_NODE_IP_FOR_DEEPFLOW: ${NODE_IP_FOR_DEEPFLOW}
+      K8S_NAMESPACE_FOR_DEEPFLOW: zerotrace
+      K8S_NODE_NAME_FOR_DEEPFLOW: zerotrace-host
+      K8S_POD_NAME_FOR_DEEPFLOW: zerotrace-container
+      TZ: Asia/Shanghai
+    volumes:
+      - type: bind
+        source: ./common/config/server/server.yaml
+        target: /etc/server.yaml
+    networks:
+      - zt
+    depends_on:
+      - mysql
+      - clickhouse
+    ports:
+      - 20416:20416  # querier http
+      - 20419:20419  # profile
+      - 30417:20417  # controller http
+      - 30035:20035  # controller gRPC
+      - 30033:20033  # ingester data
+
+networks:
+  zt:
+    external: false

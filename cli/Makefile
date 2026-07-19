@@ -1,7 +1,7 @@
 MESSAGE = github.com/deepflowio/deepflow/message
 LIBS = github.com/deepflowio/deepflow/server/libs
 SERVER = github.com/deepflowio/deepflow/server
-SERVER_LIBS = ../server/libs
+SERVER_LIBS = ../libs
 MSG = ../message/
 REV_COUNT = $(shell git rev-list --count HEAD)
 COMMIT_DATE = $(shell git show -s --format=%cd --date=short HEAD)
