@@ -71,19 +71,39 @@ go install github.com/gogo/protobuf/protoc-gen-gogo@latest
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
-### 2. 克隆代码
+### 2. 启动 MySQL 和 ClickHouse
+
+MySQL 和 ClickHouse 通过 Docker Compose 启动，避免本地安装数据库：
+
+```bash
+# 创建数据目录
+sudo mkdir -p /opt/zt/{mysql,clickhouse,clickhouse_storage}
+
+# 启动数据库服务（仅 mysql 和 clickhouse）
+cd manifests/docker-compose
+docker compose up -d mysql clickhouse
+cd ../..
+
+# 验证
+docker ps | grep -E "zt-mysql|zt-clickhouse"
+curl http://localhost:8123/ping  # ClickHouse HTTP 接口
+```
+
+> 数据库端口映射：MySQL `3306:30130`、ClickHouse `9000:9000` / `8123:8123`。
+
+### 3. 克隆代码
 
 ```bash
 git clone --recurse-submodules https://github.com/DeepShield-AI/zerotrace-server.git
 cd zerotrace-server
 ```
 
-### 3. 编译
+### 4. 编译
 
-#### 完整编译（推荐）
+#### 完整编译
 
 ```bash
-make server
+export PATH=$PATH:$(go env GOPATH)/bin && make server
 ```
 
 该命令会自动执行：
@@ -93,21 +113,6 @@ make server
 3. 编译 protobuf（agent/controller/k8s 等消息协议）
 4. 编译生成代码（watcher、hmap 等）
 5. `go build` 输出到 `bin/deepflow-server`
-
-#### 分步编译
-
-```bash
-# 1. 下载 vendor 依赖
-make vendor
-
-# 2. 编译 proto
-make $(make proto 2>/dev/null | head -20 | grep '.pb.go' | tr '\n' ' ')
-
-# 3. 编译 server
-go build -mod vendor -o bin/deepflow-server cmd/server/main.go cmd/server/config.go cmd/server/free_os_memory_handler.go
-```
-
-> **注意**：`.gitignore` 已忽略 `vendor/` 目录。首次编译需先 `make vendor` 生成 vendor，之后可直接 `make server`。
 
 ### 4. 配置
 
@@ -125,7 +130,7 @@ controller:
   listen-port: 20417
 
   # 本机 IP（必须设置，否则 agent 无法获取控制器 IP）
-  node-ip: 10.0.0.x            # ← 替换为实际宿主机 IP
+  node-ip: x.x.x.x            # ← 替换为实际宿主机 IP
 
   # MySQL 配置
   mysql:
@@ -145,7 +150,7 @@ controller:
 
   # 数据节点地址（必须设置，agent 通过此地址连接 ingester）
   trisolaris:
-    tsdb-ip: 10.0.0.x           # ← 替换为实际宿主机 IP
+    tsdb-ip: x.x.x.x           # ← 替换为实际宿主机 IP
 
   # Redis（可选，用于缓存，可关闭）
   redis:
@@ -155,7 +160,7 @@ ingester:
   # 数据接收端口
   listen-port: 30033
   # 本机 IP（必须设置）
-  node-ip: 10.0.0.x             # ← 替换为实际宿主机 IP
+  node-ip: x.x.x.x            # ← 替换为实际宿主机 IP
   controller-ips:
     - 127.0.0.1
   controller-port: 30035
@@ -188,9 +193,8 @@ mysql -h127.0.0.1 -P3306 -uroot -pdeepflow deepflow \
 ### 6. 启动
 
 ```bash
-# 启动 MySQL、ClickHouse（如未启动）
-sudo systemctl start mysql
-sudo systemctl start clickhouse-server
+# 确保数据库已启动（如未启动）
+cd manifests/docker-compose && docker compose up -d mysql clickhouse && cd ../..
 
 # 启动 server
 ./bin/deepflow-server -f ./server.yaml
