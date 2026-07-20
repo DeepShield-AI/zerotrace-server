@@ -49,5 +49,5 @@ querier:
     user-name: default
     user-password:
   deepflow-app:
-    host: deepflow-app
+    host: algorithms
     port: 20418

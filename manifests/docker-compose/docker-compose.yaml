@@ -60,12 +60,27 @@ services:
     depends_on:
       - mysql
       - clickhouse
+      - algorithms
     ports:
       - 20416:20416  # querier http
       - 20419:20419  # profile
       - 30417:20417  # controller http
       - 30035:20035  # controller gRPC
       - 30033:20033  # ingester data
+  algorithms:
+    image: registry.cn-hongkong.aliyuncs.com/deepflow-ce/deepflow-app:${DEEPFLOW_VERSION}
+    container_name: zt-algorithms
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - type: bind
+        source: ./common/config/algorithms/app.yaml
+        target: /etc/deepflow/app.yaml
+    networks:
+      - zt
+    ports:
+      - 20418:20418
 
 networks:
   zt:
