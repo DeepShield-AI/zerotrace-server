@@ -28,6 +28,8 @@ ZeroTrace 可观测性平台的服务端，负责采集数据接收、处理和�
 | protoc | 3.21+ | 编译 protobuf |
 | protoc-gen-gofast | 配套 protoc | agent 消息协议编译 |
 | protoc-gen-gogo | 配套 protoc | 内部消息协议编译 |
+| tmpl | 1.1.0 | 生成代码模板编译（watcher、hmap、fields 等） |
+| ujson | 5.x（Python 模块） | IP 地理信息生成 |
 | MySQL | 8.0+ | 元数据存储 |
 | ClickHouse | 23.8+ | 时序数据存储 |
 | make | - | 编译调度 |
@@ -71,6 +73,18 @@ go install github.com/gogo/protobuf/protoc-gen-gogo@latest
 export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
+#### 其他构建工具
+
+```bash
+# 安装 tmpl（生成代码模板工具，watcher、hmap、fields 等生成依赖）
+go install github.com/benbjohnson/tmpl@v1.1.0
+
+# 安装 ujson（IP 地理信息生成依赖）
+pip install ujson
+# 若 pip 提示 externally-managed-environment（PEP 668），改用：
+# pip install --break-system-packages ujson
+```
+
 ### 2. 克隆代码
 
 ```bash
@@ -86,9 +100,15 @@ cd zerotrace-server
 # 创建数据目录
 sudo mkdir -p /opt/zt/{mysql,clickhouse,clickhouse_storage}
 
+# 添加数据库初始化信息的路径
+- mkdir -p /etc/metadb/schema/rawsql/mysql/
+- sudo cp -r controller/db/metadb/migrator/schema/rawsql/mysql/* /etc/metadb/schema/rawsql/mysql/
+- sudo cp -r querier/db_descriptions /etc/  
+- sudo chmod -R 755 /etc/db_descriptions
+
 # 启动数据库服务（仅 mysql 和 clickhouse）
 cd manifests/docker-compose
-docker compose up -d mysql clickhouse
+docker compose up -d mysql clickhouse algorithms
 cd ../..
 
 # 验证
@@ -245,6 +265,8 @@ curl http://localhost:8123/ping
 go generate ./...
 ```
 
+> 注：proto 生成（`flow_log.pb.go`、`metric.pb.go`、`stats.pb.go`）的 include 路径指向 `vendor/`（`-I=../../../vendor`），依赖 `gogo.proto` 从 vendor 目录解析，无需 GOPATH/src 布局。
+
 ## 端口参考
 
 | 端口 | 模块 | 协议 | 用途 |
@@ -290,3 +312,5 @@ go generate ./...
 | server 日志 `delete vtap: worker1-F0` | host_device 表缺少本机记录 | 更新代码重新编译，fallback 已支持自动创建 |
 | agent 启动失败 `CAP_SYS_ADMIN` | 缺少 root 权限 | 使用 `sudo` 启动 agent |
 | `go mod vendor` 报错 | 网络或版本问题 | 检查 `go.mod` 中版本号，确保 Go 版本匹配 |
+| `make server` 报 `exec: "tmpl": executable file not found` | 未安装 tmpl | `go install github.com/benbjohnson/tmpl@v1.1.0` |
+| `make server` 报 `ModuleNotFoundError: No module named 'ujson'` | 未安装 ujson | `pip install ujson`（PEP 668 环境加 `--break-system-packages`） |

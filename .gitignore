@@ -33,3 +33,4 @@ libs/stats/pb/stats.proto
 libs/stats/pb/stats.pb.go
 
 .claude
+logs/
